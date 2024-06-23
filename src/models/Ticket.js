@@ -1,4 +1,5 @@
 import { formatDate } from "../helpers/helper.js";
+import { toZonedTime } from "date-fns-tz";
 
 class Ticket {
   constructor(
@@ -11,6 +12,10 @@ class Ticket {
     buyerEmail,
     status
   ) {
+    const timeZone = "Asia/Makassar";
+    const now = new Date();
+    const zonedDate = toZonedTime(now, timeZone);
+    //
     this.bookingCode = bookingCode;
     this.visitDate = visitDate;
     this.adultCount = adultCount;
@@ -19,8 +24,8 @@ class Ticket {
     this.buyerPhoneNumber = buyerPhoneNumber;
     this.buyerEmail = buyerEmail;
     this.status = status;
-    this.createdAt = new Date();
-    this.updatedAt = new Date();
+    this.createdAt = zonedDate;
+    this.updatedAt = zonedDate;
   }
 
   toObject() {
