@@ -20,6 +20,7 @@ class Timetable {
   static toFormattedObject(doc) {
     const data = doc.data();
     const timetable = new Timetable(data.visitDate, data.quota);
+    timetable.id = doc.id;
     timetable.createdAt = formatDate(data.createdAt);
     timetable.updatedAt = formatDate(data.updatedAt);
     return timetable;

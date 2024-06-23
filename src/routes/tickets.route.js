@@ -6,6 +6,31 @@ import tokenMiddleware from "../middlewares/token.middleware.js";
 
 const router = express.Router();
 
+router.get("/timetables", ticketsController.getAllTimeTables);
+
+router.get(
+  "/visitor-reports",
+  tokenMiddleware.auth,
+  ticketsController.getVisitorReports
+);
+
+router.post(
+  "/pay/:ticketId",
+  [
+    body("ticketName").notEmpty(),
+    body("price").notEmpty(),
+    body("quantity").notEmpty(),
+  ],
+  requestHandler.validate,
+  ticketsController.payForTicketByTicketId
+);
+
+router.get(
+  "/booking-code/:bookingCode",
+  tokenMiddleware.auth,
+  ticketsController.getTicketIdByBookingCode
+);
+
 router.post(
   "/",
   [
@@ -29,20 +54,9 @@ router.post(
   ticketsController.bookTickets
 );
 
-router.get("/timetables", ticketsController.getAllTimeTables);
+router.get("/", ticketsController.getAllTickets);
 
 router.get("/:ticketId", ticketsController.getTicketByTicketId);
-
-router.post(
-  "/pay/:ticketId",
-  [
-    body("ticketName").notEmpty(),
-    body("price").notEmpty(),
-    body("quantity").notEmpty(),
-  ],
-  requestHandler.validate,
-  ticketsController.payForTicketByTicketId
-);
 
 router.put(
   "/:ticketId",
@@ -51,10 +65,6 @@ router.put(
   ticketsController.updateTicketStatus
 );
 
-router.get(
-  "/visitor-reports",
-  tokenMiddleware.auth,
-  ticketsController.getVisitorReports
-);
+router.delete("/:ticketId", ticketsController.cancelTicket);
 
 export default router;

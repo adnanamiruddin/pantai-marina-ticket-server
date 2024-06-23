@@ -1,5 +1,6 @@
 import {
   addDoc,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -17,6 +18,100 @@ import Ticket from "../models/Ticket.js";
 import Transaction from "../models/Transaction.js";
 import Timetable from "../models/Timetable.js";
 import Midtrans from "midtrans-client";
+
+const getAllTimeTables = async (req, res) => {
+  try {
+    const timetables = [];
+    const timetablesSnapshot = await getDocs(TimetablesTable);
+    timetablesSnapshot.forEach((doc) => {
+      timetables.push(Timetable.toFormattedObject(doc));
+    });
+
+    return responseHandler.ok(res, timetables);
+  } catch (error) {
+    responseHandler.error(res);
+  }
+};
+
+const getVisitorReports = async (req, res) => {
+  try {
+    const timetables = [];
+    const timetablesSnapshot = await getDocs(TimetablesTable);
+    for (const doc of timetablesSnapshot.docs) {
+      const timetable = Timetable.toFormattedObject(doc);
+
+      let adultCount = 0;
+      let childCount = 0;
+      let totalVisitors = adultCount + childCount;
+      const ticketsSnapshot = await getDocs(
+        query(TicketsTable, where("visitDate", "==", timetable.visitDate))
+      );
+      ticketsSnapshot.forEach((ticket) => {
+        const ticketData = ticket.data();
+        adultCount += ticketData.adultCount;
+        childCount += ticketData.childCount;
+        totalVisitors += ticketData.adultCount + ticketData.childCount;
+      });
+      timetable.adultCount = adultCount;
+      timetable.childCount = childCount;
+      timetable.totalVisitors = totalVisitors;
+
+      timetables.push(timetable);
+    }
+
+    return responseHandler.ok(res, timetables);
+  } catch (error) {
+    responseHandler.error(res);
+  }
+};
+
+const payForTicketByTicketId = async (req, res) => {
+  try {
+    const { ticketId: id } = req.params;
+    const { ticketName, price, quantity } = req.body;
+
+    let snap = new Midtrans.Snap({
+      isProduction: false,
+      serverKey: process.env.PAYMENT_SECRET,
+      clientKey: process.env.PAYMENT_CLIENT,
+    });
+
+    let parameter = {
+      // item_details: {
+      //   name: ticketName,
+      //   price,
+      //   quantity,
+      // },
+      transaction_details: {
+        order_id: id,
+        gross_amount: price,
+      },
+    };
+
+    const token = await snap.createTransactionToken(parameter);
+    responseHandler.ok(res, token);
+  } catch (error) {
+    responseHandler.error(res);
+  }
+};
+
+const getTicketIdByBookingCode = async (req, res) => {
+  try {
+    const { bookingCode } = req.params;
+
+    const ticketRef = query(
+      TicketsTable,
+      where("bookingCode", "==", bookingCode)
+    );
+    const ticketSnap = await getDocs(ticketRef);
+    if (ticketSnap.empty)
+      return responseHandler.badRequest(res, "Tiket tidak ditemukan");
+
+    responseHandler.ok(res, ticketSnap.docs[0].id);
+  } catch (error) {
+    responseHandler.error(res);
+  }
+};
 
 const bookTickets = async (req, res) => {
   try {
@@ -111,15 +206,15 @@ const bookTickets = async (req, res) => {
   }
 };
 
-const getAllTimeTables = async (req, res) => {
+const getAllTickets = async (req, res) => {
   try {
-    const timetables = [];
-    const timetablesSnapshot = await getDocs(TimetablesTable);
-    timetablesSnapshot.forEach((doc) => {
-      timetables.push(Timetable.toFormattedObject(doc));
+    const tickets = [];
+    const ticketsSnapshot = await getDocs(TicketsTable);
+    ticketsSnapshot.forEach((doc) => {
+      tickets.push(Ticket.toFormattedObject(doc));
     });
 
-    return responseHandler.ok(res, timetables);
+    return responseHandler.ok(res, tickets);
   } catch (error) {
     responseHandler.error(res);
   }
@@ -153,36 +248,6 @@ const getTicketByTicketId = async (req, res) => {
   }
 };
 
-const payForTicketByTicketId = async (req, res) => {
-  try {
-    const { ticketId: id } = req.params;
-    const { ticketName, price, quantity } = req.body;
-
-    let snap = new Midtrans.Snap({
-      isProduction: false,
-      serverKey: process.env.PAYMENT_SECRET,
-      clientKey: process.env.PAYMENT_CLIENT,
-    });
-
-    let parameter = {
-      // item_details: {
-      //   name: ticketName,
-      //   price,
-      //   quantity,
-      // },
-      transaction_details: {
-        order_id: id,
-        gross_amount: price,
-      },
-    };
-
-    const token = await snap.createTransactionToken(parameter);
-    responseHandler.ok(res, token);
-  } catch (error) {
-    responseHandler.error(res);
-  }
-};
-
 const updateTicketStatus = async (req, res) => {
   try {
     const { ticketId: id } = req.params;
@@ -190,7 +255,16 @@ const updateTicketStatus = async (req, res) => {
 
     const ticketRef = doc(TicketsTable, id);
     const ticketSnap = await getDoc(ticketRef);
-    if (!ticketSnap.exists()) return responseHandler.notFound(res);
+    if (!ticketSnap.exists())
+      return responseHandler.badRequest(res, "Tiket tidak ditemukan");
+
+    const ticketStatus = ticketSnap.data().status;
+    if (status === "paid" && ticketStatus === "paid")
+      return responseHandler.badRequest(res, "Tiket sudah dibayar");
+    if (status === "confirmed" && ticketStatus == "confirmed")
+      return responseHandler.badRequest(res, "Tiket sudah dikonfirmasi");
+    if (status === "confirmed" && ticketStatus === "pending")
+      return responseHandler.badRequest(res, "Tiket belum dibayar");
 
     await updateDoc(ticketRef, { status, updatedAt: new Date() });
 
@@ -211,66 +285,54 @@ const updateTicketStatus = async (req, res) => {
   }
 };
 
-const getVisitorReports = async (req, res) => {
+const cancelTicket = async (req, res) => {
   try {
-    const timetables = [];
-    const timetablesSnapshot = await getDocs(TimetablesTable);
-    for (const doc of timetablesSnapshot.docs) {
-      const timetable = Timetable.toFormattedObject(doc);
+    const { ticketId: id } = req.params;
 
-      // const tickets = [];
-      // const ticketsSnapshot = await getDocs(
-      //   query(TicketsTable, where("visitDate", "==", timetable.visitDate))
-      // );
-      // ticketsSnapshot.forEach((ticket) => {
-      //   tickets.push(Ticket.toFormattedObject(ticket));
-      // });
-      // timetable.tickets = tickets;
+    const ticketRef = doc(TicketsTable, id);
+    const ticketSnap = await getDoc(ticketRef);
+    if (!ticketSnap.exists()) return responseHandler.notFound(res);
 
-      let adultCount = 0;
-      let childCount = 0;
-      let totalVisitors = adultCount + childCount;
-      const ticketsSnapshot = await getDocs(
-        query(TicketsTable, where("visitDate", "==", timetable.visitDate))
-      );
-      ticketsSnapshot.forEach((ticket) => {
-        const ticketData = ticket.data();
-        adultCount += ticketData.adultCount;
-        childCount += ticketData.childCount;
-        totalVisitors += ticketData.adultCount + ticketData.childCount;
-      });
-      timetable.adultCount = adultCount;
-      timetable.childCount = childCount;
-      timetable.totalVisitors = totalVisitors;
+    const ticket = Ticket.toFormattedObject(ticketSnap);
 
-      timetables.push(timetable);
-    }
+    const transactionRef = query(
+      TransactionsTable,
+      where("ticketId", "==", id)
+    );
+    const transactionSnap = await getDocs(transactionRef);
 
-    return responseHandler.ok(res, timetables);
+    const timetableRef = query(
+      TimetablesTable,
+      where("visitDate", "==", ticket.visitDate)
+    );
+    const timetableSnap = await getDocs(timetableRef);
+    if (timetableSnap.empty) return responseHandler.notFound(res);
+
+    // await updateDoc(ticketRef, { status: "cancelled", updatedAt: new Date() });
+    await updateDoc(timetableSnap.docs[0].ref, {
+      quota:
+        timetableSnap.docs[0].data().quota +
+        ticket.adultCount +
+        ticket.childCount,
+      updatedAt: new Date(),
+    });
+    await deleteDoc(ticketRef);
+    await deleteDoc(transactionSnap.docs[0].ref);
+
+    responseHandler.ok(res);
   } catch (error) {
     responseHandler.error(res);
   }
 };
 
-// const getAllTickets = async (req, res) => {
-//   try {
-//     const tickets = [];
-//     const ticketsSnapshot = await getDocs(TicketsTable);
-//     ticketsSnapshot.forEach((doc) => {
-//       tickets.push(doc.data());
-//     });
-
-//     return responseHandler.ok(res, tickets);
-//   } catch (error) {
-//     responseHandler.error(res);
-//   }
-// };
-
 export default {
-  bookTickets,
   getAllTimeTables,
+  getVisitorReports,
+  payForTicketByTicketId,
+  getTicketIdByBookingCode,
+  bookTickets,
+  getAllTickets,
   getTicketByTicketId,
   updateTicketStatus,
-  payForTicketByTicketId,
-  getVisitorReports,
+  cancelTicket,
 };

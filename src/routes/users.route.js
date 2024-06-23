@@ -7,6 +7,17 @@ import tokenMiddleware from "../middlewares/token.middleware.js";
 const router = express.Router();
 
 router.post(
+  "/sign-up",
+  [
+    body("userUID").notEmpty().withMessage("User UID is required"),
+    body("firstName").notEmpty().withMessage("First name is required"),
+    body("lastName").notEmpty().withMessage("Last name is required"),
+  ],
+  requsetHandler.validate,
+  usersController.signUp
+);
+
+router.post(
   "/sign-in",
   [body("userUID").notEmpty().withMessage("User UID is required")],
   requsetHandler.validate,

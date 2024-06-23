@@ -6,10 +6,38 @@ import {
   query,
   where,
   updateDoc,
+  addDoc,
 } from "firebase/firestore";
 import responseHandler from "../handlers/response.handler.js";
 import jsonwebtoken from "jsonwebtoken";
 import User from "../models/User.js";
+
+const signUp = async (req, res) => {
+  try {
+    const { userUID, firstName, lastName } = req.body;
+
+    const user = new User(userUID, firstName, lastName);
+    // Save additional user data
+    const docRef = await addDoc(UsersTable, user.toObject());
+
+    user.password = undefined;
+    const token = jsonwebtoken.sign(
+      { data: docRef.id },
+      process.env.SECRET_TOKEN,
+      { expiresIn: "24h" }
+    );
+
+    responseHandler.created(res, {
+      id: docRef.id,
+      ...user,
+      token,
+      message:
+        "User added successfully. Please complete your profile information.",
+    });
+  } catch (error) {
+    responseHandler.error(res);
+  }
+};
 
 const signIn = async (req, res) => {
   try {
@@ -69,8 +97,4 @@ const updateProfile = async (req, res) => {
   }
 };
 
-export default {
-  signIn,
-  getProfile,
-  updateProfile,
-};
+export default { signUp, signIn, getProfile, updateProfile };

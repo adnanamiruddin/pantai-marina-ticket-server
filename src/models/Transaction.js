@@ -20,6 +20,7 @@ class Transaction {
       data.totalPrice,
       data.isPaid
     );
+    transaction.id = doc.id;
     return transaction;
   }
 }

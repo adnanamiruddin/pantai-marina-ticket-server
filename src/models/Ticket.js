@@ -50,6 +50,7 @@ class Ticket {
       data.buyerEmail,
       data.status
     );
+    ticket.id = doc.id;
     ticket.createdAt = formatDate(data.createdAt);
     ticket.updatedAt = formatDate(data.updatedAt);
     return ticket;
