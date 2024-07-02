@@ -44,6 +44,8 @@ export const getVisitorReports = async (req, res) => {
       let adultCount = 0;
       let childCount = 0;
       let totalVisitors = adultCount + childCount;
+      let carCount = 0;
+      let motorcycleCount = 0;
       const ticketsSnapshot = await getDocs(
         query(TicketsTable, where("visitDate", "==", timetable.visitDate))
       );
@@ -52,10 +54,14 @@ export const getVisitorReports = async (req, res) => {
         adultCount += ticketData.adultCount;
         childCount += ticketData.childCount;
         totalVisitors += ticketData.adultCount + ticketData.childCount;
+        carCount += ticketData.carCount;
+        motorcycleCount += ticketData.motorcycleCount;
       });
       timetable.adultCount = adultCount;
       timetable.childCount = childCount;
       timetable.totalVisitors = totalVisitors;
+      timetable.carCount = carCount;
+      timetable.motorcycleCount = motorcycleCount;
 
       timetables.push(timetable);
     }
