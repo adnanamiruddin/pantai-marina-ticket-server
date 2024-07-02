@@ -17,9 +17,10 @@ import responseHandler from "../handlers/response.handler.js";
 import Ticket from "../models/Ticket.js";
 import Transaction from "../models/Transaction.js";
 import Timetable from "../models/Timetable.js";
-import Midtrans from "midtrans-client";
+import { toZonedTime } from "date-fns-tz";
+import { addHours, isBefore } from "date-fns";
 
-const getAllTimeTables = async (req, res) => {
+export const getAllTimeTables = async (req, res) => {
   try {
     const timetables = [];
     const timetablesSnapshot = await getDocs(TimetablesTable);
@@ -33,7 +34,7 @@ const getAllTimeTables = async (req, res) => {
   }
 };
 
-const getVisitorReports = async (req, res) => {
+export const getVisitorReports = async (req, res) => {
   try {
     const timetables = [];
     const timetablesSnapshot = await getDocs(TimetablesTable);
@@ -65,37 +66,7 @@ const getVisitorReports = async (req, res) => {
   }
 };
 
-const payForTicketByTicketId = async (req, res) => {
-  try {
-    const { ticketId: id } = req.params;
-    const { ticketName, price, quantity } = req.body;
-
-    let snap = new Midtrans.Snap({
-      isProduction: false,
-      serverKey: process.env.PAYMENT_SECRET,
-      clientKey: process.env.PAYMENT_CLIENT,
-    });
-
-    let parameter = {
-      // item_details: {
-      //   name: ticketName,
-      //   price,
-      //   quantity,
-      // },
-      transaction_details: {
-        order_id: id,
-        gross_amount: price,
-      },
-    };
-
-    const token = await snap.createTransactionToken(parameter);
-    responseHandler.ok(res, token);
-  } catch (error) {
-    responseHandler.error(res);
-  }
-};
-
-const getTicketIdByBookingCode = async (req, res) => {
+export const getTicketIdByBookingCode = async (req, res) => {
   try {
     const { bookingCode } = req.params;
 
@@ -113,11 +84,190 @@ const getTicketIdByBookingCode = async (req, res) => {
   }
 };
 
-const bookTickets = async (req, res) => {
+export const cancelTicket = async (req, res) => {
+  try {
+    const { ticketId: id } = req.params;
+
+    const ticketRef = doc(TicketsTable, id);
+    const ticketSnap = await getDoc(ticketRef);
+    if (!ticketSnap.exists()) return responseHandler.notFound(res);
+
+    const ticket = Ticket.toFormattedObject(ticketSnap);
+    if (ticket.status === "cancelled")
+      return responseHandler.badRequest(res, "Tiket sudah dibatalkan");
+    if (ticket.status === "confirmed")
+      return responseHandler.badRequest(
+        res,
+        "Tidak dapat membatalkan tiket yang sudah dikonfirmasi"
+      );
+
+    const timetableRef = query(
+      TimetablesTable,
+      where("visitDate", "==", ticket.visitDate)
+    );
+    const timetableSnap = await getDocs(timetableRef);
+    if (timetableSnap.empty) return responseHandler.notFound(res);
+
+    await updateDoc(timetableSnap.docs[0].ref, {
+      quota:
+        timetableSnap.docs[0].data().quota +
+        ticket.adultCount +
+        ticket.childCount,
+      updatedAt: new Date(),
+    });
+    await updateDoc(ticketRef, { status: "cancelled", updatedAt: new Date() });
+
+    responseHandler.ok(res);
+  } catch (error) {
+    responseHandler.error(res);
+  }
+};
+
+export const getPaidTickets = async (req, res) => {
+  try {
+    const tickets = [];
+    const ticketsSnapshot = await getDocs(
+      query(TicketsTable, where("status", "==", "paid"))
+    );
+    for (const doc of ticketsSnapshot.docs) {
+      const ticket = Ticket.toFormattedObject(doc);
+
+      const transactionRef = query(
+        TransactionsTable,
+        where("ticketId", "==", doc.id)
+      );
+      const transactionSnap = await getDocs(transactionRef);
+      if (!transactionSnap.empty) {
+        const transaction = Transaction.toFormattedObject(
+          transactionSnap.docs[0]
+        );
+        ticket.transaction = transaction;
+      }
+
+      tickets.push(ticket);
+    }
+
+    return responseHandler.ok(res, tickets);
+  } catch (error) {
+    responseHandler.error(res);
+  }
+};
+
+export const payForTicket = async (req, res) => {
+  try {
+    const { ticketId } = req.params;
+    const { proofOfPaymentURL } = req.body;
+
+    const ticketRef = doc(TicketsTable, ticketId);
+    const ticketSnap = await getDoc(ticketRef);
+    if (!ticketSnap.exists()) return responseHandler.notFound(res);
+
+    const transactionRef = query(
+      TransactionsTable,
+      where("ticketId", "==", ticketId)
+    );
+    const transactionSnap = await getDocs(transactionRef);
+    if (transactionSnap.empty) return responseHandler.notFound(res);
+
+    await updateDoc(ticketRef, {
+      status: "paid",
+      updatedAt: new Date(),
+    });
+    await updateDoc(transactionSnap.docs[0].ref, {
+      proofOfPaymentURL,
+    });
+
+    responseHandler.ok(res);
+  } catch (error) {
+    responseHandler.error(res);
+  }
+};
+
+export const confirmTicket = async (req, res) => {
+  try {
+    const { ticketId } = req.params;
+
+    const ticketRef = doc(TicketsTable, ticketId);
+    const ticketSnap = await getDoc(ticketRef);
+    if (!ticketSnap.exists()) return responseHandler.notFound(res);
+
+    const ticket = Ticket.toFormattedObject(ticketSnap);
+    if (ticket.status === "confirmed")
+      return responseHandler.badRequest(res, "Tiket sudah dikonfirmasi");
+    if (ticket.status === "pending")
+      return responseHandler.badRequest(res, "Tiket belum dibayar");
+    if (ticket.status === "cancelled")
+      return responseHandler.badRequest(res, "Tiket sudah dibatalkan");
+
+    const transactionRef = query(
+      TransactionsTable,
+      where("ticketId", "==", ticketId)
+    );
+    const transactionSnap = await getDocs(transactionRef);
+    if (transactionSnap.empty) return responseHandler.notFound(res);
+
+    await updateDoc(ticketRef, {
+      status: "confirmed",
+      updatedAt: new Date(),
+    });
+    await updateDoc(transactionSnap.docs[0].ref, { isPaid: true });
+
+    responseHandler.ok(res);
+  } catch (error) {
+    responseHandler.error(res);
+  }
+};
+
+export const getPendingTicketsOverOneHour = async (req, res) => {
+  try {
+    const tickets = [];
+    const ticketsSnapshot = await getDocs(
+      query(TicketsTable, where("status", "==", "pending"))
+    );
+    for (const doc of ticketsSnapshot.docs) {
+      const ticket = Ticket.toFormattedObject(doc);
+
+      const timeZone = "Asia/Makassar";
+      const now = new Date();
+      const zonedDate = toZonedTime(now, timeZone);
+
+      const ticketExpirationTime = addHours(new Date(ticket.createdAt), 1);
+      const zonedTicketExpirationTime = toZonedTime(
+        ticketExpirationTime,
+        timeZone
+      );
+
+      if (isBefore(zonedTicketExpirationTime, zonedDate)) {
+        const transactionRef = query(
+          TransactionsTable,
+          where("ticketId", "==", doc.id)
+        );
+        const transactionSnap = await getDocs(transactionRef);
+        if (!transactionSnap.empty) {
+          const transaction = Transaction.toFormattedObject(
+            transactionSnap.docs[0]
+          );
+          ticket.transaction = transaction;
+        }
+
+        tickets.push(ticket);
+      }
+    }
+
+    return responseHandler.ok(res, tickets);
+  } catch (error) {
+    responseHandler.error(res);
+  }
+};
+
+//
+export const bookTickets = async (req, res) => {
   try {
     const {
       adultCount,
       childCount,
+      carCount,
+      motorcycleCount,
       totalPrice,
       visitDate,
       buyerName,
@@ -133,7 +283,7 @@ const bookTickets = async (req, res) => {
     const randomPart = Math.floor(Math.random() * 10000)
       .toString()
       .padStart(4, "0");
-    const bookingCode = `PM-${day}${month}${year}-${randomPart}`;
+    const bookingCode = `MRN-${day}${month}${year}-${randomPart}`;
     const totalTicketCount = adultCount + childCount;
 
     const timetableSnapshot = await getDocs(
@@ -150,6 +300,8 @@ const bookTickets = async (req, res) => {
         visitDate,
         adultCount,
         childCount,
+        carCount,
+        motorcycleCount,
         buyerName,
         buyerPhoneNumber,
         buyerEmail,
@@ -175,6 +327,8 @@ const bookTickets = async (req, res) => {
           visitDate,
           adultCount,
           childCount,
+          carCount,
+          motorcycleCount,
           buyerName,
           buyerPhoneNumber,
           buyerEmail,
@@ -206,13 +360,27 @@ const bookTickets = async (req, res) => {
   }
 };
 
-const getAllTickets = async (req, res) => {
+export const getAllTickets = async (req, res) => {
   try {
     const tickets = [];
     const ticketsSnapshot = await getDocs(TicketsTable);
-    ticketsSnapshot.forEach((doc) => {
-      tickets.push(Ticket.toFormattedObject(doc));
-    });
+    for (const doc of ticketsSnapshot.docs) {
+      const ticket = Ticket.toFormattedObject(doc);
+
+      const transactionRef = query(
+        TransactionsTable,
+        where("ticketId", "==", doc.id)
+      );
+      const transactionSnap = await getDocs(transactionRef);
+      if (!transactionSnap.empty) {
+        const transaction = Transaction.toFormattedObject(
+          transactionSnap.docs[0]
+        );
+        ticket.transaction = transaction;
+      }
+
+      tickets.push(ticket);
+    }
 
     return responseHandler.ok(res, tickets);
   } catch (error) {
@@ -220,7 +388,7 @@ const getAllTickets = async (req, res) => {
   }
 };
 
-const getTicketByTicketId = async (req, res) => {
+export const getTicketByTicketId = async (req, res) => {
   try {
     const { ticketId: id } = req.params;
 
@@ -248,44 +416,7 @@ const getTicketByTicketId = async (req, res) => {
   }
 };
 
-const updateTicketStatus = async (req, res) => {
-  try {
-    const { ticketId: id } = req.params;
-    const { status } = req.body;
-
-    const ticketRef = doc(TicketsTable, id);
-    const ticketSnap = await getDoc(ticketRef);
-    if (!ticketSnap.exists())
-      return responseHandler.badRequest(res, "Tiket tidak ditemukan");
-
-    const ticketStatus = ticketSnap.data().status;
-    if (status === "paid" && ticketStatus === "paid")
-      return responseHandler.badRequest(res, "Tiket sudah dibayar");
-    if (status === "confirmed" && ticketStatus == "confirmed")
-      return responseHandler.badRequest(res, "Tiket sudah dikonfirmasi");
-    if (status === "confirmed" && ticketStatus === "pending")
-      return responseHandler.badRequest(res, "Tiket belum dibayar");
-
-    await updateDoc(ticketRef, { status, updatedAt: new Date() });
-
-    if (status == "paid") {
-      const transactionRef = query(
-        TransactionsTable,
-        where("ticketId", "==", id)
-      );
-      const transactionSnap = await getDocs(transactionRef);
-      if (transactionSnap.empty) return responseHandler.notFound(res);
-
-      await updateDoc(transactionSnap.docs[0].ref, { isPaid: true });
-    }
-
-    responseHandler.ok(res);
-  } catch (error) {
-    responseHandler.error(res);
-  }
-};
-
-const cancelTicket = async (req, res) => {
+export const deleteTicket = async (req, res) => {
   try {
     const { ticketId: id } = req.params;
 
@@ -294,6 +425,11 @@ const cancelTicket = async (req, res) => {
     if (!ticketSnap.exists()) return responseHandler.notFound(res);
 
     const ticket = Ticket.toFormattedObject(ticketSnap);
+    if (ticket.status !== "cancelled")
+      return responseHandler.badRequest(
+        res,
+        "Tiket tidak dapat dihapus. Silakan batalkan tiket terlebih dahulu."
+      );
 
     const transactionRef = query(
       TransactionsTable,
@@ -301,21 +437,6 @@ const cancelTicket = async (req, res) => {
     );
     const transactionSnap = await getDocs(transactionRef);
 
-    const timetableRef = query(
-      TimetablesTable,
-      where("visitDate", "==", ticket.visitDate)
-    );
-    const timetableSnap = await getDocs(timetableRef);
-    if (timetableSnap.empty) return responseHandler.notFound(res);
-
-    // await updateDoc(ticketRef, { status: "cancelled", updatedAt: new Date() });
-    await updateDoc(timetableSnap.docs[0].ref, {
-      quota:
-        timetableSnap.docs[0].data().quota +
-        ticket.adultCount +
-        ticket.childCount,
-      updatedAt: new Date(),
-    });
     await deleteDoc(ticketRef);
     await deleteDoc(transactionSnap.docs[0].ref);
 
@@ -323,16 +444,4 @@ const cancelTicket = async (req, res) => {
   } catch (error) {
     responseHandler.error(res);
   }
-};
-
-export default {
-  getAllTimeTables,
-  getVisitorReports,
-  payForTicketByTicketId,
-  getTicketIdByBookingCode,
-  bookTickets,
-  getAllTickets,
-  getTicketByTicketId,
-  updateTicketStatus,
-  cancelTicket,
 };

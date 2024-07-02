@@ -12,7 +12,7 @@ import responseHandler from "../handlers/response.handler.js";
 import jsonwebtoken from "jsonwebtoken";
 import User from "../models/User.js";
 
-const signUp = async (req, res) => {
+export const signUp = async (req, res) => {
   try {
     const { userUID, firstName, lastName } = req.body;
 
@@ -39,7 +39,7 @@ const signUp = async (req, res) => {
   }
 };
 
-const signIn = async (req, res) => {
+export const signIn = async (req, res) => {
   try {
     const { userUID } = req.body;
 
@@ -66,7 +66,7 @@ const signIn = async (req, res) => {
   }
 };
 
-const getProfile = async (req, res) => {
+export const getProfile = async (req, res) => {
   try {
     const docSnap = await getDoc(doc(UsersTable, req.user.id));
     if (!docSnap.exists()) return responseHandler.notFound(res);
@@ -77,7 +77,7 @@ const getProfile = async (req, res) => {
   }
 };
 
-const updateProfile = async (req, res) => {
+export const updateProfile = async (req, res) => {
   try {
     const { id } = req.user;
     const dataReq = req.body;
@@ -96,5 +96,3 @@ const updateProfile = async (req, res) => {
     responseHandler.error(res);
   }
 };
-
-export default { signUp, signIn, getProfile, updateProfile };

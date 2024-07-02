@@ -7,6 +7,8 @@ class Ticket {
     visitDate,
     adultCount,
     childCount,
+    carCount,
+    motorcycleCount,
     buyerName,
     buyerPhoneNumber,
     buyerEmail,
@@ -20,10 +22,12 @@ class Ticket {
     this.visitDate = visitDate;
     this.adultCount = adultCount;
     this.childCount = childCount;
+    this.carCount = carCount;
+    this.motorcycleCount = motorcycleCount;
     this.buyerName = buyerName;
     this.buyerPhoneNumber = buyerPhoneNumber;
     this.buyerEmail = buyerEmail;
-    this.status = status;
+    this.status = status; // pending, paid, confirmed, cancelled
     this.createdAt = zonedDate;
     this.updatedAt = zonedDate;
   }
@@ -34,6 +38,8 @@ class Ticket {
       visitDate: this.visitDate,
       adultCount: this.adultCount,
       childCount: this.childCount,
+      carCount: this.carCount,
+      motorcycleCount: this.motorcycleCount,
       buyerName: this.buyerName,
       buyerPhoneNumber: this.buyerPhoneNumber,
       buyerEmail: this.buyerEmail,
@@ -50,6 +56,8 @@ class Ticket {
       data.visitDate,
       data.adultCount,
       data.childCount,
+      data.carCount,
+      data.motorcycleCount,
       data.buyerName,
       data.buyerPhoneNumber,
       data.buyerEmail,

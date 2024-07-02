@@ -1,6 +1,6 @@
 import express from "express";
 import { body } from "express-validator";
-import usersController from "../controllers/users.controller.js";
+import * as usersController from "../controllers/users.controller.js";
 import requsetHandler from "../handlers/request.handler.js";
 import tokenMiddleware from "../middlewares/token.middleware.js";
 
