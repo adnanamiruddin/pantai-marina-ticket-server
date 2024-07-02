@@ -18,7 +18,7 @@ import Ticket from "../models/Ticket.js";
 import Transaction from "../models/Transaction.js";
 import Timetable from "../models/Timetable.js";
 import { toZonedTime } from "date-fns-tz";
-import { addHours, isBefore } from "date-fns";
+import { addMinutes, isBefore } from "date-fns";
 
 export const getAllTimeTables = async (req, res) => {
   try {
@@ -218,7 +218,7 @@ export const confirmTicket = async (req, res) => {
   }
 };
 
-export const getPendingTicketsOverOneHour = async (req, res) => {
+export const getPendingTicketsOverHalfHour = async (req, res) => {
   try {
     const tickets = [];
     const ticketsSnapshot = await getDocs(
@@ -231,7 +231,7 @@ export const getPendingTicketsOverOneHour = async (req, res) => {
       const now = new Date();
       const zonedDate = toZonedTime(now, timeZone);
 
-      const ticketExpirationTime = addHours(new Date(ticket.createdAt), 1);
+      const ticketExpirationTime = addMinutes(new Date(ticket.createdAt), 30);
       const zonedTicketExpirationTime = toZonedTime(
         ticketExpirationTime,
         timeZone

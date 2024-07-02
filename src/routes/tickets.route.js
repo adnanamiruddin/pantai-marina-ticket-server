@@ -47,7 +47,7 @@ router.put(
 router.get(
   "/pending-tickets",
   tokenMiddleware.auth,
-  ticketsController.getPendingTicketsOverOneHour
+  ticketsController.getPendingTicketsOverHalfHour
 );
 
 //
